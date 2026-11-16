@@ -1,6 +1,6 @@
 # Fishies
 
-**[Web, 2026]**
+**Platypwn CTF**
 
 **Category:** Web  
 **Challenge:** Fish Pond
@@ -112,4 +112,4 @@ PP{h1jack1ng_th3_d3bugg3r_w1th_f1sh13s::enPnlILg5WTd}
 
 ### Takeaway
 
-The XSS was only the entry point. The decisive step was following prototype pollution into the server-side Puppeteer launch. A supposedly fixed argument list did not make the launch safe because Puppeteer still consumed inherited options. The npm launcher then provided a route for `NODE_OPTIONS` to execute a module before the Chrome arguments were processed.
+This challenge highlights how prototype pollution can turn seemingly harmless inherited properties into a critical security risk. Explicit configuration does not guarantee safety when security-sensitive components still trust properties inherited from mutable prototypes. The key lesson is to enforce strict property validation and prevent untrusted data from influencing process execution.
