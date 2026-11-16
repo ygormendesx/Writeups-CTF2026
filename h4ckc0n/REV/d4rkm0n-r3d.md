@@ -31,7 +31,7 @@ The provided ROM is 1,048,576 bytes long and has the following SHA-256 digest:
 0574acc47bb4fe0aa67d9d7ee739fdf2bfcc9f5502833b03e368dae2459f1738
 ```
 
-We used the `pret/pokered` project as a reference for the original Pokémon Red code and ROM layout. Comparing the challenge image with the reference highlighted **16 modified regions** totaling **10,075 changed bytes** in the differential report. The main modifications were concentrated in bank `0x1D` (decimal 29), including a large altered region beginning at file offset `0x7420B`.
+I used the `pret/pokered` project as a reference for the original Pokémon Red code and ROM layout. Comparing the challenge image with the reference highlighted **16 modified regions** totaling **10,075 changed bytes** in the differential report. The main modifications were concentrated in bank `0x1D` (decimal 29), including a large altered region beginning at file offset `0x7420B`.
 
 One modified call sequence in that region contains:
 
@@ -148,7 +148,7 @@ This also explains why a direct `strings` search of the ROM would not reveal the
 
 ### Complete exploit
 
-The following standalone Python script reproduces the decoding operation directly from the challenge ROM. It does not require an emulator or an external Python package. Save it as `exploit.py` beside `game.gbc` and run `python3 exploit.py game.gbc`.
+The following standalone Python script reproduces the decoding operation directly from the challenge ROM. It requires neither an emulator nor an external Python package. Save it as `exploit.py` beside `game.gbc` and run `python3 exploit.py game.gbc`.
 
 ```python
 import hashlib
@@ -232,7 +232,7 @@ Flag: d4rk{l3t_th3_cr3d1ts_r0ll_HELLLL_Y3AHHHH}
 d4rk{l3t_th3_cr3d1ts_r0ll_HELLLL_Y3AHHHH}
 ```
 
-The flag was initially rejected by the scoreboard and was later accepted after a challenge-side validation correction. The recovered bytes themselves did not need to change.
+The flag above is the exact value recovered from the supplied ROM by the decoder. No additional assumption about scoreboard validation is required for the extraction.
 
 ### Takeaway
 
