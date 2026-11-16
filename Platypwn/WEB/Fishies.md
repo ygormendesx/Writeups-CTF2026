@@ -5,8 +5,6 @@
 **Category:** Web  
 **Challenge:** Fishies
 
-## Fishies Writeup
-
 ### Overview
 
 Fish Pond lets users add ASCII fish and report them for review. Reporting a fish launches a Puppeteer browser with an administrator cookie and opens the fish page. The challenge combines a broken HTML escape routine, an unsafe recursive merge, and inherited Puppeteer launch options to read `/flag.txt`.
