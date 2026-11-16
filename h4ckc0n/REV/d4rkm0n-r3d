@@ -1,0 +1,239 @@
+# d4rkm0n r3d
+
+**h4ckc0n 2026**
+
+**Category:** Reverse Engineering  
+**Challenge:** d4rkm0n r3d
+
+### Overview
+
+The challenge provides a modified 1 MiB Game Boy Color ROM named `game.gbc`, built around Pokémon Red. The flag is not stored as a normal ASCII string. Instead, the modified ROM contains an additional routine that reconstructs an encoded message during the game's credits sequence.
+
+The goal is to identify the inserted routine, recover the encrypted message and its key, reproduce the decoder, and convert the resulting Game Boy character codes into the flag.
+
+The recovery chain is:
+
+```text
+Modified Game Boy ROM
+    → compare against a clean Pokémon Red reference
+    → locate the injected bank-29 routine
+    → identify ciphertext and key
+    → reproduce the XOR loop
+    → decode the Game Boy text encoding
+    → recover the flag
+```
+
+### ROM identification and differential analysis
+
+The provided ROM is 1,048,576 bytes long and has the following SHA-256 digest:
+
+```text
+0574acc47bb4fe0aa67d9d7ee739fdf2bfcc9f5502833b03e368dae2459f1738
+```
+
+We used the `pret/pokered` project as a reference for the original Pokémon Red code and ROM layout. Comparing the challenge image with the reference highlighted **16 modified regions** totaling **10,075 changed bytes** in the differential report. The main modifications were concentrated in bank `0x1D` (decimal 29), including a large altered region beginning at file offset `0x7420B`.
+
+One modified call sequence in that region contains:
+
+```text
+FILE 0x74220: ... CD 32 42 CD BA 40 ...
+                  │
+                  └── CALL $4232
+```
+
+This made CPU address `0x4232`, within switchable ROM bank 29, a high-value target. The corresponding file offset is:
+
+```text
+File offset = 0x1D × 0x4000 + (0x4232 - 0x4000)
+            = 0x74232
+```
+
+The code at this location is responsible for preparing the hidden text.
+
+### Recovering the hidden routine
+
+The injected routine begins by copying a 32-byte key from ROM address `$42B8` into working RAM at `$D002`. It then processes 44 bytes of encrypted data beginning at ROM address `$428C` and writes the result into RAM beginning at `$D030`.
+
+The relevant instruction sequence is:
+
+```text
+LD DE,$42B8
+LD HL,$D002
+LD B,$20
+
+copy_key:
+    LD A,[DE]
+    LD [HL+],A
+    INC DE
+    DEC B
+    JR NZ,copy_key
+
+LD DE,$428C
+LD C,$00
+LD B,$2C
+
+decode_loop:
+    LD A,C
+    AND $1F
+    ADD $02
+    LD L,A
+    LD H,$D0
+    LD A,[DE]
+    INC DE
+    XOR [HL]
+    XOR C
+    PUSH AF
+    LD A,C
+    ADD $30
+    LD L,A
+    LD H,$D0
+    POP AF
+    LD [HL],A
+    INC C
+    DEC B
+    JR NZ,decode_loop
+```
+
+The effective transformation is:
+
+```text
+plaintext[i] = ciphertext[i] XOR key[i mod 32] XOR i
+```
+
+Here, `i` is the zero-based byte index and the final XOR is performed with its eight-bit value. The loop runs for `0x2C` iterations, so the encoded payload is 44 bytes long.
+
+The two ROM ranges are contiguous:
+
+| Purpose | ROM bank | CPU address | File offset | Size |
+| --- | --- | --- | --- | --- |
+| Encrypted text | 29 | `$428C` | `0x7428C` | 44 bytes |
+| XOR key | 29 | `$42B8` | `0x742B8` | 32 bytes |
+
+### Decoding the Game Boy text
+
+Applying the XOR expression does not produce ASCII. The output uses Pokémon Red's internal character representation, together with characters used for the flag format.
+
+The relevant mappings are:
+
+| Encoded values | Meaning |
+| --- | --- |
+| `0x80–0x99` | `A–Z` |
+| `0xA0–0xB9` | `a–z` |
+| `0xF6–0xFF` | `0–9` |
+| `0x7A`, `0x7B`, `0x7C` | `_`, `{`, `}` |
+| `0x4E` | Line break/control code |
+| `0x50` | End of text |
+
+The raw decoded message includes two line-break control codes:
+
+```text
+d4rk{l3t_th3_cr3d1
+ ts_r0ll_HELLLL_Y3A
+ HHHH}
+```
+
+The leading spaces above are visual indentation only. Removing the two line breaks yields the continuous flag string.
+
+This also explains why a direct `strings` search of the ROM would not reveal the result: the data is both XOR-obfuscated and represented in a non-ASCII character set.
+
+### Exploit flow
+
+1. Load the provided `game.gbc` ROM and check its size and SHA-256 digest.
+2. Read the 44-byte encrypted message at file offset `0x7428C`.
+3. Read the 32-byte key at file offset `0x742B8`.
+4. For every byte index `i`, compute `ciphertext[i] XOR key[i % 32] XOR i`.
+5. Translate the resulting character codes using the ROM's text encoding.
+6. Remove the line-break codes and stop at the end-of-text marker.
+7. Extract the resulting `d4rk{...}` flag.
+
+### Complete exploit
+
+The following standalone Python script reproduces the decoding operation directly from the challenge ROM. It does not require an emulator or an external Python package. Save it as `exploit.py` beside `game.gbc` and run `python3 exploit.py game.gbc`.
+
+```python
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+EXPECTED_SHA256 = "0574acc47bb4fe0aa67d9d7ee739fdf2bfcc9f5502833b03e368dae2459f1738"
+CIPHERTEXT_OFFSET = 0x7428C
+CIPHERTEXT_LENGTH = 0x2C
+KEY_OFFSET = 0x742B8
+KEY_LENGTH = 0x20
+
+
+def decode_character(value):
+    if 0x80 <= value <= 0x99:
+        return chr(value - 0x80 + ord("A"))
+    if 0xA0 <= value <= 0xB9:
+        return chr(value - 0xA0 + ord("a"))
+    if 0xF6 <= value <= 0xFF:
+        return str(value - 0xF6)
+    mapping = {
+        0x7A: "_",
+        0x7B: "{",
+        0x7C: "}",
+        0x4E: "\n",
+        0x50: "\x00",
+    }
+    if value not in mapping:
+        raise ValueError(f"Unexpected character code: 0x{value:02x}")
+    return mapping[value]
+
+
+def main():
+    rom_path = Path(sys.argv[1] if len(sys.argv) > 1 else "game.gbc")
+    rom = rom_path.read_bytes()
+    digest = hashlib.sha256(rom).hexdigest()
+
+    if digest != EXPECTED_SHA256:
+        raise ValueError(f"Unexpected ROM SHA-256: {digest}")
+
+    ciphertext = rom[CIPHERTEXT_OFFSET:CIPHERTEXT_OFFSET + CIPHERTEXT_LENGTH]
+    key = rom[KEY_OFFSET:KEY_OFFSET + KEY_LENGTH]
+
+    if len(ciphertext) != CIPHERTEXT_LENGTH or len(key) != KEY_LENGTH:
+        raise ValueError("Incomplete ROM data")
+
+    decoded = bytes(
+        value ^ key[index % KEY_LENGTH] ^ index
+        for index, value in enumerate(ciphertext)
+    )
+
+    text = "".join(decode_character(value) for value in decoded)
+    text = text.split("\x00", 1)[0]
+    flag_text = text.replace("\n", "")
+    match = re.search(r"d4rk\{[^}]+\}", flag_text)
+
+    if match is None:
+        raise ValueError(f"Flag not found in decoded text: {flag_text!r}")
+
+    print(f"ROM SHA-256: {digest}")
+    print(f"Decoded payload: {text!r}")
+    print(f"Flag: {match.group(0)}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Running the script against the supplied ROM produces:
+
+```text
+ROM SHA-256: 0574acc47bb4fe0aa67d9d7ee739fdf2bfcc9f5502833b03e368dae2459f1738
+Decoded payload: 'd4rk{l3t_th3_cr3d1\nts_r0ll_HELLLL_Y3A\nHHHH}'
+Flag: d4rk{l3t_th3_cr3d1ts_r0ll_HELLLL_Y3AHHHH}
+```
+
+### Flag
+
+```text
+d4rk{l3t_th3_cr3d1ts_r0ll_HELLLL_Y3AHHHH}
+```
+
+The flag was initially rejected by the scoreboard and was later accepted after a challenge-side validation correction. The recovered bytes themselves did not need to change.
+
+### Takeaway
+
+The modified credits routine provided a direct path to the flag once its banked ROM address and data layout were identified. A binary diff narrowed the search to the injected code; the routine disclosed a compact XOR construction; and the final obstacle was recognizing that the decrypted bytes were Game Boy text codes rather than ASCII. Reproducing the decoder directly from the ROM makes the solution independent of the game's runtime and fully reproducible from the original challenge file.
