@@ -187,7 +187,6 @@ def md4(msg, iv, iterations=2):
 
     return struct.pack("<4I", *state)
 
-# Confere a implementação contra um vetor conhecido do MD4 completo.
 assert md4(
     b"abc",
     (0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476),
@@ -260,8 +259,7 @@ def learn(k, new_tag, q25, q26, bout, c, d,
 
     if q25_new != (q25 ^ bit):
         raise RuntimeError(f"Estado D inconsistente no bit {k}")
-
-    # O passo 22 revela um bit de U = q24 XOR q23.
+   
     if k < 31:
         delta = (ror(q26_new, 11) - ror(q26, 11)) & MASK
         if delta == bit:
@@ -272,8 +270,7 @@ def learn(k, new_tag, q25, q26, bout, c, d,
             raise RuntimeError(f"Passo 22 inconsistente no bit {k}")
         u_value |= (input_bit ^ ((q25 >> k) & 1)) << k
         u_mask |= bit
-
-    # O passo 23 revela bits de V = q24.
+   
     mask = (q25_new ^ q25) ^ (q26_new ^ q26)
     delta_b = (b_new - bout) & MASK
     r0 = q25 ^ q26
@@ -321,8 +318,7 @@ def recover_iv(msg, tag, msg2, tag2, c, d, q25, q26, bout,
             q23 = v ^ u
             q27 = rol(q23 + (q26 ^ q25 ^ v) + w14 + K[2], 15)
             b = (bout - q27) & MASK
-
-            # O primeiro byte do digest não foi fornecido: apenas 256 casos.
+            
             for low_a in range(256):
                 a = ((high_a | low_a) - v) & MASK
                 iv = (a, b, c, d)
